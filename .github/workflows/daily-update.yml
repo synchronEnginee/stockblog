@@ -1,0 +1,53 @@
+name: Daily Stock Update
+
+on:
+  schedule:
+    - cron: '40 2 * * *' # 11:40 JST
+  workflow_dispatch:
+
+jobs:
+  update-content:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate Content
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/collect_data.py
+
+      - name: Cleanup Old Posts
+        run: |
+          node scripts/cleanup_posts.js
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add src/content/blog
+          # Check if there are changes before committing
+          if [[ -n $(git status -s) ]]; then
+            git commit -m "Daily stock report update"
+            git push
+          else
+            echo "No changes to commit"
+          fi
