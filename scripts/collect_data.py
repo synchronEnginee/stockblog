@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MINKABU_URL = "https://minkabu.jp/financial_item_ranking/fall?exchange=tokyo.prime&order=asc"
+MINKABU_BUY_URL = "https://minkabu.jp/financial_item_ranking/buy_picks_rise?exchange=tokyo&order=desc"
 KABUTAN_URL = "https://kabutan.jp/info/accessranking/2_1"
 OUTPUT_DIR = "src/content/blog"
 
@@ -40,6 +41,29 @@ def fetch_minkabu_data():
         print(f"Error fetching Minkabu data: {e}")
         return "Failed to fetch Minkabu rankings."
 
+def fetch_minkabu_buy_data():
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(MINKABU_BUY_URL, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        rankings = []
+        # The structure is likely similar to the other ranking page
+        rows = soup.select('table.md_table_theme01 tr')
+        for row in rows[:11]: # Top 10
+            cols = row.find_all('td')
+            if len(cols) >= 3:
+                name = cols[1].get_text(strip=True)
+                code = cols[1].find('a').get('href').split('/')[-1] if cols[1].find('a') else "N/A"
+                # For buy picks, column index might differ, but assuming standard layout for now or grabbing what we can
+                # Often col 2 or 3 has the relevant score/change
+                rankings.append(f"{code} {name}")
+        return "\n".join(rankings)
+    except Exception as e:
+        print(f"Error fetching Minkabu Buy Picks data: {e}")
+        return "Failed to fetch Minkabu Buy Picks."
+
 def fetch_kabutan_data():
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -58,7 +82,7 @@ def fetch_kabutan_data():
         print(f"Error fetching Kabutan data: {e}")
         return "Failed to fetch Kabutan news."
 
-def generate_blog_post(date, market_data, news_data):
+def generate_blog_post(date, market_data, buy_data, news_data):
     if not GEMINI_API_KEY:
         print("GEMINI_API_KEY not found.")
         return None
@@ -87,20 +111,25 @@ def generate_blog_post(date, market_data, news_data):
             
             Market Data (Top Fallers):
             {market_data}
+
+            Undervalued/Buy Picks Rise Ranking (Might indicate undervalued stocks):
+            {buy_data}
             
             Popular News:
             {news_data}
             
             Write a blog post in Japanese in Markdown format.
             The post should analyze why these stocks fell and comment on the popular news.
+            Also, pick 1-2 stocks from the Buy Picks ranking and analyze why they might be considered undervalued or gathering attention.
             Make it engaging and informative.
             
             Structure:
             1. Title (H1)
             2. Introduction
             3. Today's Market Drop Ranking (Analyze top 3-5)
-            4. Attention News
-            5. Conclusion
+            4. Undervalued Stocks Watch (Analyze Buy Picks)
+            5. Attention News
+            6. Conclusion
             
             Output only the Markdown content (starting with frontmatter).
             Frontmatter format:
@@ -131,9 +160,10 @@ def main():
     print(f"Starting data collection for {date.isoformat()}")
     
     minkabu_data = fetch_minkabu_data()
+    minkabu_buy_data = fetch_minkabu_buy_data()
     kabutan_data = fetch_kabutan_data()
     
-    content = generate_blog_post(date, minkabu_data, kabutan_data)
+    content = generate_blog_post(date, minkabu_data, minkabu_buy_data, kabutan_data)
     
     if content:
         # Clean up code blocks if Gemini returns them
